@@ -1,22 +1,22 @@
-#define DATA_BIT_SIZE 10u // unsigned char
+#include "pin_comm.h"
 
-unsigned long bitRate = 2000; // bits per second
-
-void send10b(unsigned char pinNumber, unsigned int data) {
+void send10b(unsigned int data) {
 
 	unsigned char i;
 	unsigned int converter = 1u;
 	char pinState;
 
-	noInterrupts();
+	// noInterrupts();
 
 	for (i = 0u; i < DATA_BIT_SIZE; i++) {
 		pinState  = ((data & converter) == 0u ? LOW : HIGH);
-		digitalWrite(pinNumber, pinState);
 		converter = converter << 1;
+		digitalWrite(OUTPUT_PIN, pinState);
+		delayMicroseconds(microBitDelay);
+		delay(milliBitDelay);
 	}
 
-	interrupts();
+	// interrupts();
 }
 
 unsigned int receive10b(unsigned char pinNumber) {
@@ -25,14 +25,16 @@ unsigned int receive10b(unsigned char pinNumber) {
 	unsigned int data = 0u;
 	char pinState;
 
-	noInterrupts();
+	// noInterrupts();
 
 	for (i = 0u; i < DATA_BIT_SIZE; i++) {
 		pinState = digitalRead(pinNumber);
 		data = (data << 1) | (pinState == LOW ? 0u : 1u);
+		delayMicroseconds(microBitDelay);
+		delay(milliBitDelay);
 	}
 
-	interrupts();
+	// interrupts();
 
 	return data;
 }
@@ -50,20 +52,37 @@ unsigned int generateAlternatingBitData(unsigned char bitQtt) {
 	return data;
 }
 
-unsigned long getMaxBitRate() {
+unsigned long getMinBitTime() {
 
-	const unsigned char pinNumber = 2u;
+	// On both Arduino UNO R3 and Arduino Mega 2560, the maximum bit rate is about 277,777 bps (time ~= 36 us, for 10 bits)
+
 	unsigned long time;
 	unsigned int data;
 
 	data = generateAlternatingBitData(DATA_BIT_SIZE);
 
 	time = micros();
-	send10b(pinNumber, data);
+	send10b(data);
 	time = micros() - time;
 
-	// 'DATA_BIT_SIZE' bits were sent in 'time' microseconds.
-	// Bit rate = 'DATA_BIT_SIZE' / ('time' * 10^(-6)) = 'DATA_BIT_SIZE' * 10^6 / 'time' [bps]
+	return time / DATA_BIT_SIZE;
+}
 
-	return DATA_BIT_SIZE * 1000000u / time;
+void setBitDelay() {
+
+	microBitDelay = 0u;
+	milliBitDelay = 0u;
+
+	if (!minimumBitTime) {
+		minimumBitTime = getMinBitTime();
+	}
+
+	microBitDelay = desiredBitTime - minimumBitTime - DELAY_CORRECTION_FACTOR; // Everything in microseconds
+
+	// Arduino's documentation warns that, for values greater than 16,383, the function delayMicroseconds() won't produce an accurate delay
+	// For safety, a cap is put at 10,000. For delays greater than that, the delay() function is used
+	if (microBitDelay >= 10000u) {
+		microBitDelay = 0u;
+		milliBitDelay = (desiredBitTime - minimumBitTime) / 1000u; // Converts to milliseconds
+	}
 }
