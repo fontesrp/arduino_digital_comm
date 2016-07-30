@@ -1,40 +1,69 @@
-#define BITS_PER_BYTE 8
+#define DATA_BIT_SIZE 10u // unsigned char
 
-void digitalSend(unsigned char pinNumber, unsigned int data) {
+unsigned long bitRate = 2000; // bits per second
 
-	int i;
+void send10b(unsigned char pinNumber, unsigned int data) {
+
+	unsigned char i;
+	unsigned int converter = 1u;
 	char pinState;
-	unsigned int converter = 1;
-	unsigned char sendBit = 0;
 
 	noInterrupts();
 
-	for (i = 0; i < sizeof(unsigned int) * BITS_PER_BYTE; i++) {
-		converter = converter << i;
-		sendBit   = (data & converter) >> i;
-		pinState  = (sendBit == 0 ? LOW : HIGH);
+	for (i = 0u; i < DATA_BIT_SIZE; i++) {
+		pinState  = ((data & converter) == 0u ? LOW : HIGH);
 		digitalWrite(pinNumber, pinState);
+		converter = converter << 1;
 	}
 
 	interrupts();
 }
 
-unsigned int digitalReceive(unsigned char pinNumber) {
+unsigned int receive10b(unsigned char pinNumber) {
 
-	int i;
+	unsigned char i;
+	unsigned int data = 0u;
 	char pinState;
-	unsigned int data = 0;
-	unsigned char receivedBit;
 
 	noInterrupts();
 
-	for (i = 0; i < sizeof(unsigned int) * BITS_PER_BYTE; i++) {
+	for (i = 0u; i < DATA_BIT_SIZE; i++) {
 		pinState = digitalRead(pinNumber);
-		receivedBit = (pinState == LOW ? 0 : 1);
-		data = (data << i) | receivedBit;
+		data = (data << 1) | (pinState == LOW ? 0u : 1u);
 	}
 
 	interrupts();
 
 	return data;
+}
+
+unsigned int generateAlternatingBitData(unsigned char bitQtt) {
+
+	// For bitQtt = 10, should return the 10-bit integer 682 = 0x2AA = 0010 1010 1010
+
+	unsigned int data = 0u;
+
+	for (; bitQtt; bitQtt--) {
+		data = (data << 1) | ((bitQtt + 1u) % 2u); // Set all odd bits to 1
+	}
+
+	return data;
+}
+
+unsigned long getMaxBitRate() {
+
+	const unsigned char pinNumber = 2u;
+	unsigned long time;
+	unsigned int data;
+
+	data = generateAlternatingBitData(DATA_BIT_SIZE);
+
+	time = micros();
+	send10b(pinNumber, data);
+	time = micros() - time;
+
+	// 'DATA_BIT_SIZE' bits were sent in 'time' microseconds.
+	// Bit rate = 'DATA_BIT_SIZE' / ('time' * 10^(-6)) = 'DATA_BIT_SIZE' * 10^6 / 'time' [bps]
+
+	return DATA_BIT_SIZE * 1000000u / time;
 }
